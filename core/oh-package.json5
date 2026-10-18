@@ -1,0 +1,9 @@
+{
+  "name": "@arkgenie/core",
+  "version": "1.0.0",
+  "description": "ArkGenie core: message model, streaming state machine, transport abstraction and SSE client for HarmonyOS AI chat.",
+  "main": "Index.ets",
+  "author": "arkgenie",
+  "license": "Apache-2.0",
+  "dependencies": {}
+}

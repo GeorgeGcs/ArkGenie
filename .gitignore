@@ -1,0 +1,15 @@
+/node_modules
+**/oh_modules
+/local.properties
+/build-profile.local.json5
+**/*.p12
+**/*.p7b
+**/*.cer
+/.idea
+**/build
+/.hvigor
+/.codex_tmp
+.cxx
+/.clang-format
+/.test
+/.appanalyzer

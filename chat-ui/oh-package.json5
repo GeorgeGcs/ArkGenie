@@ -1,0 +1,11 @@
+{
+  "name": "@arkgenie/chat-ui",
+  "version": "1.0.0",
+  "description": "ArkGenie chat UI: message list, bubbles, composer and suggested prompts for HarmonyOS AI chat.",
+  "main": "Index.ets",
+  "author": "arkgenie",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@arkgenie/core": "file:../core"
+  }
+}

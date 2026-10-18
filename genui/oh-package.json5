@@ -1,0 +1,9 @@
+{
+  "name": "@arkgenie/genui",
+  "version": "1.0.0",
+  "description": "ArkGenie GenUI: secure A2UI parser, catalog and declarative generative UI renderer for HarmonyOS ArkUI.",
+  "main": "Index.ets",
+  "author": "arkgenie",
+  "license": "Apache-2.0",
+  "dependencies": {}
+}

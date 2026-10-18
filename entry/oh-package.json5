@@ -1,0 +1,13 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "ArkGenie demo app: full AI chat experience without API key (MockTransport).",
+  "main": "",
+  "author": "arkgenie",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@arkgenie/core": "file:../core",
+    "@arkgenie/chat-ui": "file:../chat-ui",
+    "@arkgenie/genui": "file:../genui"
+  }
+}

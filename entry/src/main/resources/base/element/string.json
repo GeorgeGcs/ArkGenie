@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "ArkGenie demo module"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "ArkGenie demo entry ability"
+    },
+    {
+      "name": "EntryAbility_label",
+      "value": "ArkGenie Demo"
+    }
+  ]
+}
