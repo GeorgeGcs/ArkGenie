@@ -15,6 +15,11 @@ export {
   SessionManager
 } from './src/main/ets/session/SessionManager';
 export {
+  PreferencesSessionStore,
+  PreferencesSessionStoreOptions,
+  PreferencesStoreError
+} from './src/main/ets/session/PreferencesSessionStore';
+export {
   ChatEvent,
   ChatEventBus,
   ChatEventListener,

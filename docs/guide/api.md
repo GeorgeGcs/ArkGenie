@@ -5,6 +5,7 @@
 - `ChatController`：发送、停止、重试、重新生成和会话切换。
 - `ChatTransport`：统一传输接口，内置 `MockTransport`、`SseTransport` 和 `OpenAiCompatibleProvider`。
 - `SessionManager`：多会话生命周期管理，使用 `SessionStore` 或 `JsonSessionStore` 接入宿主持久化。
+- `PreferencesSessionStore`：HarmonyOS Preferences 适配，支持合并写入、显式 `flush()`、分块快照及失败重试。参见 [持久化指南](./storage.md)。
 - `ChatEventBus`：发送、增量、完成、取消、错误和工具调用事件。
 
 ## Chat UI

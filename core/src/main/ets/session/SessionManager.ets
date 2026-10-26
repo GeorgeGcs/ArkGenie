@@ -141,9 +141,10 @@ export class InMemorySessionStore implements SessionStore {
         status: message.status,
         errorText: message.errorText,
         attachments,
-          createdAt: message.createdAt,
-          contentType: message.contentType,
-          metadata: message.metadata
+        createdAt: message.createdAt,
+        contentType: message.contentType,
+        metadata: message.metadata === undefined ? undefined :
+          JSON.parse(JSON.stringify(message.metadata)) as Record<string, Object>
       });
     }
     return {

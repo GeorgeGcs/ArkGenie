@@ -90,6 +90,7 @@ ChatView({ controller: this.controller, theme: ChatTheme.dark() })
 |---|---|
 | `ChatController` | 对话状态机：`send(text)` / `sendWithAttachments()` / `stop()` / `regenerate()` / `retry(id)` / `clear()`，支持切换 Provider |
 | `SessionManager` | 多会话创建、切换、重命名、删除，以及可插拔 `SessionStore` / `JsonSessionStore` 持久化 |
+| `PreferencesSessionStore` | Preferences 宿主适配，合并写入、分块快照、错误反馈和显式 `flush()` |
 | `ChatEventBus` | 消息发送、流式增量、完成、取消、错误、工具调用事件 |
 | `ChatMessage` | 消息模型：role、content、status、contentType、attachments、metadata |
 | `MessageStatus` | `sending → streaming → done / error / cancelled` |
@@ -123,6 +124,12 @@ ChatView({ controller: this.controller, theme: ChatTheme.dark() })
 `entry/` 目录是根工程的可运行示例应用模块：DevEco Studio 打开本仓库根目录，同步后直接运行 `entry` 模块即可（默认 MockTransport，无需任何 API 配置）。公开仓库不包含证书、私钥或签名密码；需要安装到设备时，在 DevEco Studio 的项目签名配置中选择本机签名材料。签名配置只保存在本地 `build-profile.json5`，不要提交到仓库。
 
 `docs/` 是 VitePress 中文文档站源码，可在该目录执行 `npm install` 后运行 `npm run docs:dev`。
+
+`entry` 已接入 Preferences 会话恢复及后台保存，宿主用法见 [会话持久化指南](docs/guide/storage.md)。
+
+## 主机侧回归测试
+
+仓库根目录执行 `npm install`、`npm test`，以及 `npm run check:core`。测试转译实际 ETS 逻辑并使用 Preferences 替身；详细范围见 [测试说明](tests/README.md)。这些检查不替代 DevEco 构建或设备验收。
 
 ## 开源与安全
 

@@ -51,7 +51,7 @@ export class ChatController {
   private currentTask: ChatTask | null = null;
   private pendingDelta: string = '';
   private pendingTargetId: string = '';
-  private flushScheduled: boolean = false;
+  private flushTimer: number | null = null;
   private systemPrompt: string = '';
   private requestSequence: number = 0;
   private activeRequestId: number = 0;
@@ -131,6 +131,7 @@ export class ChatController {
       return;
     }
     const requestId = this.activeRequestId;
+    this.cancelFlush();
     const target = this.findById(this.activeTargetId);
     if (target && requestId !== 0) {
       this.flushFor(target, requestId);
@@ -274,6 +275,7 @@ export class ChatController {
   }
 
   private requestStream(target: ChatMessage): void {
+    this.cancelFlush();
     const requestId = ++this.requestSequence;
     this.activeRequestId = requestId;
     this.activeTargetId = target.id;
@@ -357,12 +359,11 @@ export class ChatController {
   }
 
   private scheduleFlush(target: ChatMessage, requestId: number): void {
-    if (this.flushScheduled) {
+    if (this.flushTimer !== null) {
       return;
     }
-    this.flushScheduled = true;
-    setTimeout(() => {
-      this.flushScheduled = false;
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = null;
       if (this.isActive(requestId, target.id)) {
         this.flushFor(target, requestId);
       }
@@ -378,7 +379,7 @@ export class ChatController {
     }
     target.content += this.pendingDelta;
     this.pendingDelta = '';
-    this.pendingTargetId = '';
+    // 归属保留到整个请求结束，后续 chunk 仍需写入同一条消息。
     this.persistMessages();
   }
 
@@ -386,6 +387,7 @@ export class ChatController {
     if (requestId !== this.activeRequestId) {
       return;
     }
+    this.cancelFlush();
     this.activeRequestId = 0;
     this.activeTargetId = '';
     this.currentTask = null;
@@ -396,6 +398,13 @@ export class ChatController {
 
   private isActive(requestId: number, targetId: string): boolean {
     return this.activeRequestId === requestId && this.activeTargetId === targetId && this.isGenerating;
+  }
+
+  private cancelFlush(): void {
+    if (this.flushTimer !== null) {
+      clearTimeout(this.flushTimer);
+      this.flushTimer = null;
+    }
   }
 
   private persistMessages(): void {

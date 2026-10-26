@@ -10,7 +10,7 @@ export default defineConfig({
       { text: 'API', link: '/guide/api' }
     ],
     sidebar: [
-      { text: '开始使用', items: [{ text: '快速开始', link: '/guide/quick-start' }, { text: 'API 概览', link: '/guide/api' }] },
+      { text: '开始使用', items: [{ text: '快速开始', link: '/guide/quick-start' }, { text: 'API 概览', link: '/guide/api' }, { text: 'Preferences 持久化', link: '/guide/storage' }] },
       { text: '生成式 UI', items: [{ text: 'A2UI 安全模型', link: '/guide/a2ui' }] }
     ]
   }

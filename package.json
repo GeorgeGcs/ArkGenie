@@ -1,0 +1,12 @@
+{
+  "name": "arkgenie-host-tests",
+  "private": true,
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.cjs",
+    "check:core": "node tests/check-core-types.cjs"
+  },
+  "devDependencies": {
+    "typescript": "5.8.3"
+  }
+}

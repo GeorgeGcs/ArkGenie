@@ -7,15 +7,12 @@
 import { ChatController } from '@arkgenie/core';
 import { ChatView } from '@arkgenie/chat-ui';
 import { GenUiDemo } from '../components/GenUiDemo';
-import { DemoConfig } from '../config/DemoConfig';
+import { DemoRuntime } from '../config/DemoRuntime';
 
 @Entry
 @ComponentV2
 struct Index {
-  private controller: ChatController = new ChatController(
-    DemoConfig.createTransport(),
-    '你是一个简洁友善的鸿蒙应用内 AI 助手。'
-  );
+  private controller: ChatController = DemoRuntime.getController();
 
   private prompts: string[] = [
     'ArkGenie 能做什么？',
