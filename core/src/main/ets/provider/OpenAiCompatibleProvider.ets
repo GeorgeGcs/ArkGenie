@@ -33,6 +33,7 @@ interface ToolCallFunctionDelta {
 }
 
 interface ToolCallDelta {
+  index?: number;
   id?: string;
   function?: ToolCallFunctionDelta;
 }
@@ -42,10 +43,17 @@ interface StreamChunk {
 }
 
 export class OpenAiCompatibleProvider implements ChatTransport {
-  private sse: SseTransport;
+  private config: OpenAiCompatibleConfig;
 
   constructor(config: OpenAiCompatibleConfig) {
-    this.sse = new SseTransport({
+    this.config = config;
+  }
+
+  send(request: ChatRequest, callbacks: StreamCallbacks): ChatTask {
+    const config = this.config;
+    // 每次 send 独立聚合，Provider 可安全复用或并发调用。
+    const pending = new Map<number, ToolCall>();
+    const sse = new SseTransport({
       url: config.baseUrl,
       headers: {
         'Authorization': `Bearer ${config.apiKey}`
@@ -76,28 +84,57 @@ export class OpenAiCompatibleProvider implements ChatTransport {
         }
         return delta.content;
       },
-      parseToolCall: (payload: string): ToolCall | null => {
+      parseToolCalls: (payload: string): ToolCall[] => {
         const chunk = JSON.parse(payload) as StreamChunk;
         const delta = chunk.choices && chunk.choices.length > 0 ? chunk.choices[0].delta : undefined;
         const calls = delta === undefined ? undefined : delta.tool_calls;
         if (!calls || calls.length === 0) {
-          return null;
+          return [];
         }
-        const call = calls[0];
-        return {
-          name: call.function === undefined ? 'tool' : (call.function.name ?? 'tool'),
-          callId: call.id,
-          arguments: call.function === undefined ? undefined : call.function.arguments,
-          status: 'streaming'
-        };
+        const updates: ToolCall[] = [];
+        for (const call of calls) {
+          const index = call.index ?? 0;
+          const previous = pending.get(index);
+          const tool: ToolCall = {
+            name: (previous?.name ?? '') + (call.function?.name ?? ''),
+            callId: call.id ?? previous?.callId,
+            arguments: String(previous?.arguments ?? '') + (call.function?.arguments ?? ''),
+            status: 'streaming'
+          };
+          pending.set(index, tool);
+          updates.push(tool);
+        }
+        return updates;
       },
       reconnectAttempts: config.reconnectAttempts,
       reconnectDelayMs: config.reconnectDelayMs,
       heartbeatTimeoutMs: config.heartbeatTimeoutMs
     });
-  }
-
-  send(request: ChatRequest, callbacks: StreamCallbacks): ChatTask {
-    return this.sse.send(request, callbacks);
+    const wrapped: StreamCallbacks = {
+      onChunk: callbacks.onChunk,
+      onError: callbacks.onError,
+      onToolCall: callbacks.onToolCall,
+      onComplete: (fullText: string): void => {
+        const completed: ToolCall[] = [];
+        try {
+          for (const tool of pending.values()) {
+            completed.push({
+              name: tool.name,
+              callId: tool.callId,
+              arguments: JSON.parse(String(tool.arguments || '{}')) as Object,
+              status: 'done'
+            });
+          }
+        } catch (e) {
+          callbacks.onError(new Error('Invalid tool call arguments JSON'));
+          return;
+        }
+        if (callbacks.onToolCall) {
+          for (const tool of completed) { callbacks.onToolCall(tool); }
+        }
+        callbacks.onComplete(fullText);
+      }
+    };
+    return sse.send(request, wrapped);
   }
 }

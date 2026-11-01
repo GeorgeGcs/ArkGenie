@@ -14,6 +14,8 @@ npm run check:core
 
 覆盖连续流式窗口、停止/错误保留尾部、取消后迟到回调、重试、会话切换、同步 Transport、快照恢复、写入合并、并发 flush、长中文和 emoji、损坏恢复及失败重试。包含 Controller 停止后落盘再重开的集成用例。
 
+同时覆盖历史重试的上下文边界、整轮上下文裁剪、UI 与快照的独立节流、SSE 旧连接隔离、UTF-8 分包、心跳超时、HTTP 重试分类、取消及同步异常资源清理、并行工具参数聚合，以及 Markdown 每字符增量解析与完整解析的一致性。网络和解码 API 使用主机替身，不连接真实服务。
+
 `check:core` 对 Controller、Preferences 适配器及依赖做 TypeScript strict 检查，平台声明只保留使用到的 SDK 签名。
 
 这些检查不验证 ArkUI 响应式行为、ArkTS 严格语法兼容性、真实 Preferences 文件系统或设备生命周期。DevEco 构建与设备验收需要单独执行，主机测试通过不表示设备验收通过。

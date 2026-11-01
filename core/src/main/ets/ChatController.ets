@@ -41,11 +41,19 @@ interface ToolCallEventPayload {
   result?: Object;
 }
 
+export interface ChatContextPolicy {
+  /** 保留最近完整轮次，默认 20。 */
+  maxRounds?: number;
+  /** 历史正文字符预算（非 token）；最新一轮和 system prompt 始终保留。默认 32000。 */
+  maxCharacters?: number;
+}
+
 @ObservedV2
 export class ChatController {
   @Trace messages: ChatMessage[] = [];
   @Trace isGenerating: boolean = false;
   @Trace inputEnabled: boolean = true;
+  @Trace contentRevision: number = 0;
 
   private transport: ChatTransport;
   private currentTask: ChatTask | null = null;
@@ -56,9 +64,11 @@ export class ChatController {
   private requestSequence: number = 0;
   private activeRequestId: number = 0;
   private activeTargetId: string = '';
-  private sessionId: string = '';
+  @Trace private sessionId: string = '';
   private sessions: SessionManager;
   private events: ChatEventBus;
+  private contextPolicy: ChatContextPolicy = { maxRounds: 20, maxCharacters: 32000 };
+  private persistTimer: number | null = null;
 
   constructor(transport: ChatTransport, systemPrompt: string = '', sessionManager?: SessionManager,
     eventBus?: ChatEventBus) {
@@ -83,8 +93,28 @@ export class ChatController {
     return this.sessions;
   }
 
+  @Computed
   get currentSessionId(): string {
     return this.sessionId;
+  }
+
+  setContextPolicy(policy: ChatContextPolicy): void {
+    const maxRounds = policy.maxRounds ?? 20;
+    const maxCharacters = policy.maxCharacters ?? 32000;
+    if (!Number.isInteger(maxRounds) || maxRounds < 1 ||
+      !Number.isInteger(maxCharacters) || maxCharacters < 1) {
+      throw new Error('Context limits must be positive integers');
+    }
+    this.contextPolicy = { maxRounds, maxCharacters };
+  }
+
+  /** 宿主后台保存前调用；先把 UI 缓冲同步到会话快照。 */
+  persistCurrent(): void {
+    const target = this.findById(this.activeTargetId);
+    if (target) {
+      this.flushFor(target, this.activeRequestId);
+    }
+    this.persistMessages();
   }
 
   /** 在空闲时切换 Mock/真实 Provider，便于设置页动态切换服务。 */
@@ -263,7 +293,11 @@ export class ChatController {
       wires.push({ role: MessageRole.SYSTEM.toString(), content: this.systemPrompt });
     }
     for (const message of this.messages) {
-      if (message.id === excludeId || message.role === MessageRole.SYSTEM) {
+      // 重试历史回复只使用该回复之前的上下文；后续消息保留在本地。
+      if (message.id === excludeId) {
+        break;
+      }
+      if (message.role === MessageRole.SYSTEM) {
         continue;
       }
       if (message.status === MessageStatus.ERROR || message.status === MessageStatus.CANCELLED) {
@@ -271,7 +305,22 @@ export class ChatController {
       }
       wires.push(message.toWire());
     }
-    return wires;
+    const start = this.systemPrompt.length > 0 ? 1 : 0;
+    let rounds = 0;
+    let characters = 0;
+    let keepFrom = wires.length;
+    for (let i = wires.length - 1; i >= start; i--) {
+      characters += wires[i].content.length;
+      if (wires[i].role === MessageRole.USER) {
+        if (rounds > 0 && (rounds >= (this.contextPolicy.maxRounds ?? 20) ||
+          characters > (this.contextPolicy.maxCharacters ?? 32000))) {
+          break;
+        }
+        rounds += 1;
+        keepFrom = i;
+      }
+    }
+    return wires.slice(0, start).concat(wires.slice(keepFrom));
   }
 
   private requestStream(target: ChatMessage): void {
@@ -303,6 +352,7 @@ export class ChatController {
         }
         this.flushFor(target, requestId);
         target.content = fullText;
+        this.contentRevision += 1;
         target.status = MessageStatus.DONE;
         target.errorText = '';
         this.persistMessages();
@@ -379,8 +429,9 @@ export class ChatController {
     }
     target.content += this.pendingDelta;
     this.pendingDelta = '';
+    this.contentRevision += 1;
     // 归属保留到整个请求结束，后续 chunk 仍需写入同一条消息。
-    this.persistMessages();
+    this.schedulePersist();
   }
 
   private finishRequest(requestId: number): void {
@@ -408,6 +459,20 @@ export class ChatController {
   }
 
   private persistMessages(): void {
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer);
+      this.persistTimer = null;
+    }
     this.sessions.replaceMessages(this.sessionId, this.messages);
+  }
+
+  private schedulePersist(): void {
+    if (this.persistTimer !== null) {
+      return;
+    }
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      this.persistMessages();
+    }, 500);
   }
 }

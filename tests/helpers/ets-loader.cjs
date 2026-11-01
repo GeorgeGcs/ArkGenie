@@ -27,19 +27,21 @@ function createLoader({ clock = globalThis, mocks = {} } = {}) {
     const module = { exports: {} };
     cache.set(file, module);
     const source = fs.readFileSync(file, 'utf8')
-      .replace(/@ObservedV2\s*/g, '').replace(/@Trace\s*/g, '');
+      .replace(/@ObservedV2\s*/g, '').replace(/@Trace\s*/g, '').replace(/@Computed\s*/g, '');
     const result = ts.transpileModule(source, {
       fileName: file.replace(/\.ets$/, '.ts'), reportDiagnostics: true,
       compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS }
     });
     const errors = (result.diagnostics || []).filter(d => d.category === ts.DiagnosticCategory.Error);
     if (errors.length) throw new Error(errors.map(d => ts.flattenDiagnosticMessageText(d.messageText, '\n')).join('\n'));
-    new Function('require', 'exports', 'module', 'setTimeout', 'clearTimeout', result.outputText)(
+    new Function('require', 'exports', 'module', 'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', result.outputText)(
       name => {
         if (Object.hasOwn(mocks, name)) return mocks[name];
         if (!name.startsWith('.')) throw new Error(`Unmocked platform module: ${name}`);
         return load(path.resolve(path.dirname(file), name + '.ets'));
-      }, module.exports, module, clock.setTimeout.bind(clock), clock.clearTimeout.bind(clock)
+      }, module.exports, module, clock.setTimeout.bind(clock), clock.clearTimeout.bind(clock),
+      clock.setInterval.bind(clock), clock.clearInterval.bind(clock),
+      class extends Date { static now() { return clock.now ?? Date.now(); } }
     );
     return module.exports;
   }
@@ -56,6 +58,12 @@ class FakeClock {
     return id;
   }
   clearTimeout(id) { this.tasks.delete(id); }
+  setInterval(fn, delay) {
+    const id = this.setTimeout(fn, delay);
+    this.tasks.get(id).interval = delay;
+    return id;
+  }
+  clearInterval(id) { this.tasks.delete(id); }
   tick(ms) {
     const end = this.now + ms;
     while (true) {
@@ -63,7 +71,9 @@ class FakeClock {
         .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
       if (!entry) break;
       const [id, task] = entry;
-      this.tasks.delete(id); this.now = task.at; task.fn();
+      this.tasks.delete(id); this.now = task.at;
+      if (task.interval) this.tasks.set(id, { ...task, at: task.at + task.interval });
+      task.fn();
     }
     this.now = end;
   }

@@ -31,24 +31,42 @@ export struct MessageList {
   @Event onDelete: (messageId: string) => void = () => {
   };
   private scroller: Scroller = new Scroller();
+  private following: boolean = true;
+  private followTimer: number | null = null;
 
-  @Monitor('controller.messages.length')
+  @Monitor('controller.messages.length', 'controller.contentRevision')
   onMessageCountChange(): void {
-    if (this.autoFollow) {
-      this.scrollToEnd();
+    if (this.autoFollow && this.following && this.followTimer === null) {
+      this.followTimer = setTimeout(() => {
+        this.followTimer = null;
+        if (this.autoFollow && this.following) { this.scrollToEnd(); }
+      }, 0);
+    }
+  }
+
+  @Monitor('controller.currentSessionId')
+  onSessionChange(): void {
+    this.following = true;
+    this.onMessageCountChange();
+  }
+
+  aboutToDisappear(): void {
+    if (this.followTimer !== null) {
+      clearTimeout(this.followTimer);
+      this.followTimer = null;
     }
   }
 
   build() {
     List({ scroller: this.scroller }) {
-      ForEach(this.controller.messages, (item: ChatMessage) => {
+      Repeat<ChatMessage>(this.controller.messages).each((entry: RepeatItem<ChatMessage>) => {
         ListItem() {
           MessageBubble({
-            message: item,
+            message: entry.item,
             theme: this.theme,
-            references: this.referencesFor(item),
-            toolCalls: this.toolCallsFor(item),
-            thinking: this.thinkingFor(item),
+            references: this.referencesFor(entry.item),
+            toolCalls: this.toolCallsFor(entry.item),
+            thinking: this.thinkingFor(entry.item),
             showFeedback: this.showFeedback,
             onRetry: (messageId: string) => {
               this.controller.retry(messageId);
@@ -73,18 +91,21 @@ export struct MessageList {
             }
           })
         }
-      }, (item: ChatMessage) => item.id)
+      }).key((item: ChatMessage) => item.id).virtualScroll()
     }
     .width('100%')
     .layoutWeight(1)
     .scrollBar(BarState.Off)
     .onScrollFrameBegin((offset: number) => {
+      if (offset < 0) { this.following = false; }
       return { offsetRemain: offset };
     })
+    .onReachEnd(() => { this.following = true; })
   }
 
   /** 供父组件在新消息到达时调用 */
   scrollToEnd(): void {
+    this.following = true;
     this.scroller.scrollEdge(Edge.Bottom);
   }
 

@@ -110,7 +110,7 @@ export class PreferencesSessionStore implements SessionStore {
       await operation;
     } catch (e) {
       this.report('flush', 'Session persistence failed; pending changes remain in memory');
-      throw e;
+      throw e as Error;
     } finally {
       this.inFlight = null;
     }
@@ -167,7 +167,7 @@ export class PreferencesSessionStore implements SessionStore {
       } catch (e) {
         // 恢复进程内清单缓存，后续 retry 从最后确认成功的版本继续。
         this.backend.putSync(MANIFEST_KEY, previousRaw);
-        throw e;
+        throw e as Error;
       }
       this.manifest = next;
       this.savedRevision = writingRevision;
@@ -193,7 +193,7 @@ export class PreferencesSessionStore implements SessionStore {
       this.manifest = manifest;
     } catch (e) {
       if (!manifest.previous || !this.validSlot(manifest.previous)) {
-        throw e;
+        throw e as Error;
       }
       state = this.readSlot(manifest.previous);
       this.manifest = { version: 1, active: manifest.previous };

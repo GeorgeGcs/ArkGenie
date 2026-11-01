@@ -136,3 +136,62 @@ test('synchronous transport completion and thrown send both settle the controlle
   assert.equal(broken.messages[1].status, 'error');
   assert.equal(broken.isGenerating, false);
 });
+
+test('retry history excludes later turns while preserving local messages', () => {
+  const { controller, requests, assistant } = setup();
+  requests[0].callbacks.onComplete('first');
+  controller.send('future question'); requests[1].callbacks.onComplete('future answer');
+  const ids = controller.messages.map(m => m.id);
+  controller.retry(assistant.id);
+  assert.deepEqual(requests[2].request.messages.map(m => m.content), ['hello']);
+  assert.deepEqual(controller.messages.map(m => m.id), ids);
+  assert.equal(controller.messages[3].content, 'future answer');
+});
+
+test('context budgets keep whole recent turns and system prompt without trimming local history', () => {
+  const { controller, requests } = setup();
+  requests[0].callbacks.onComplete('first');
+  controller.send('second'); requests[1].callbacks.onComplete('answer');
+  controller.setContextPolicy({ maxRounds: 2, maxCharacters: 100 });
+  controller.send('third');
+  assert.deepEqual(requests[2].request.messages.map(m => m.content), ['second', 'answer', 'third']);
+  requests[2].callbacks.onComplete('third answer');
+  controller.setContextPolicy({ maxCharacters: 1 });
+  controller.send('latest oversized question');
+  assert.deepEqual(requests[3].request.messages.map(m => m.content), ['latest oversized question']);
+  assert.equal(controller.messages.length, 8);
+  assert.throws(() => controller.setContextPolicy({ maxRounds: 0 }), /positive integers/);
+  const withSystem = new controller.constructor({ send(request, cb) {
+    assert.deepEqual(request.messages.map(m => m.content), ['system', 'question']);
+    cb.onComplete('ok'); return { cancel() {} };
+  } }, 'system');
+  withSystem.setContextPolicy({ maxCharacters: 1 }); withSystem.send('question');
+});
+
+test('stream UI updates are independent of snapshot frequency, and stop persists the full tail', () => {
+  const { controller, requests, clock } = setup();
+  const store = controller.sessionManager.store;
+  let saves = 0;
+  const save = store.save.bind(store);
+  store.save = snapshot => { saves++; save(snapshot); };
+  for (let i = 0; i < 10; i++) {
+    requests[0].callbacks.onChunk('字'); clock.tick(50);
+  }
+  assert.equal(controller.messages[1].content, '字'.repeat(10));
+  assert.equal(saves, 0);
+  clock.tick(50); assert.equal(saves, 1);
+  requests[0].callbacks.onChunk('尾部'); controller.stop();
+  assert.equal(store.load()[0].messages[1].content, '字'.repeat(10) + '尾部');
+  assert.equal(store.load()[0].messages[1].status, 'cancelled');
+  assert.equal(clock.tasks.size, 0);
+});
+
+test('explicit controller persist includes buffered content before the next UI tick', () => {
+  const { controller, requests, clock } = setup();
+  requests[0].callbacks.onChunk('buffered');
+  controller.persistCurrent();
+  assert.equal(controller.sessionManager.store.load()[0].messages[1].content, 'buffered');
+  controller.newSession(); clock.tick(1000);
+  const old = controller.sessionManager.sessions.find(s => s.messages.length > 0);
+  assert.equal(old.messages[1].content, 'buffered');
+});

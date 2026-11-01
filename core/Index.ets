@@ -4,7 +4,7 @@ export { ChatTransport, ChatRequest, ChatTask, StreamCallbacks, ToolCall } from 
 export { SseTransport, SseOptions } from './src/main/ets/transport/SseTransport';
 export { MockTransport } from './src/main/ets/transport/MockTransport';
 export { OpenAiCompatibleProvider, OpenAiCompatibleConfig } from './src/main/ets/provider/OpenAiCompatibleProvider';
-export { ChatController } from './src/main/ets/ChatController';
+export { ChatController, ChatContextPolicy } from './src/main/ets/ChatController';
 export {
   ChatSession,
   ChatSessionSnapshot,

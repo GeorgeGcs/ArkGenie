@@ -15,13 +15,14 @@ export interface SseOptions {
   parsePayload: (payload: string) => string | null;
   /** 可选工具调用解析器；不支持工具调用的 Provider 可省略。 */
   parseToolCall?: (payload: string) => ToolCall | null;
+  parseToolCalls?: (payload: string) => ToolCall[];
   connectTimeoutMs?: number;
   readTimeoutMs?: number;
-  /** 首次连接失败后的最大重连次数，默认 0。 */
+  /** 尚未输出文本或工具调用时的最大重试次数，默认 0。 */
   reconnectAttempts?: number;
   /** 重连间隔，默认 500ms。 */
   reconnectDelayMs?: number;
-  /** 超过该时间没有任何 SSE 数据/注释则重连，0 表示关闭。 */
+  /** 超过该时间无数据则失败；未输出内容时可重试，0 表示关闭。 */
   heartbeatTimeoutMs?: number;
 }
 
@@ -45,7 +46,9 @@ export class SseTransport implements ChatTransport {
   }
 
   send(request: ChatRequest, callbacks: StreamCallbacks): ChatTask {
-    let client = http.createHttp();
+    let client: http.HttpRequest | null = null;
+    let generation = 0;
+    let receivedContent = false;
     let cancelled = false;
     let completed = false;
     let lineBuffer = '';
@@ -68,8 +71,10 @@ export class SseTransport implements ChatTransport {
     };
 
     const destroyClient = (): void => {
+      const previous = client;
+      client = null;
       try {
-        client.destroy();
+        if (previous !== null) { previous.destroy(); }
       } catch (e) {
         // 销毁是尽力操作。
       }
@@ -103,11 +108,13 @@ export class SseTransport implements ChatTransport {
         return;
       }
       const maxRetries = this.options.reconnectAttempts ?? 0;
-      if (attempts >= maxRetries) {
+      // POST 生成请求不能从中间安全续传；已有文本/工具事件时交给用户重试。
+      if (receivedContent || attempts >= maxRetries) {
         fail(err);
         return;
       }
       attempts += 1;
+      generation += 1;
       destroyClient();
       retryTimer = setTimeout(() => {
         retryTimer = null;
@@ -133,14 +140,22 @@ export class SseTransport implements ChatTransport {
         return;
       }
       try {
-        if (this.options.parseToolCall && callbacks.onToolCall) {
+        if (this.options.parseToolCalls) {
+          for (const toolCall of this.options.parseToolCalls(payload)) {
+            receivedContent = true;
+            if (callbacks.onToolCall) { callbacks.onToolCall(toolCall); }
+          }
+        }
+        if (!this.options.parseToolCalls && this.options.parseToolCall) {
           const toolCall = this.options.parseToolCall(payload);
           if (toolCall !== null) {
-            callbacks.onToolCall(toolCall);
+            receivedContent = true;
+            if (callbacks.onToolCall) { callbacks.onToolCall(toolCall); }
           }
         }
         const delta = this.options.parsePayload(payload);
         if (delta !== null && delta.length > 0) {
+          receivedContent = true;
           fullText += delta;
           callbacks.onChunk(delta);
         }
@@ -153,82 +168,96 @@ export class SseTransport implements ChatTransport {
       if (cancelled || completed) {
         return;
       }
-      lineBuffer = '';
-      doneSignal = false;
-      lastActivity = Date.now();
-      client = http.createHttp();
-      const decoder = util.TextDecoder.create('utf-8');
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'Accept': 'text/event-stream',
-        'Cache-Control': 'no-cache'
-      };
-      if (this.options.headers) {
-        for (const key of Object.keys(this.options.headers)) {
-          headers[key] = this.options.headers[key];
-        }
-      }
-      if (request.extraHeaders) {
-        for (const key of Object.keys(request.extraHeaders)) {
-          headers[key] = request.extraHeaders[key];
-        }
-      }
-
-      client.on('dataReceive', (data: ArrayBuffer) => {
-        if (cancelled || completed) { return; }
+      try {
+        lineBuffer = '';
+        doneSignal = false;
         lastActivity = Date.now();
-        const text = decoder.decodeToString(new Uint8Array(data), { stream: true });
-        lineBuffer += text;
-        let idx = lineBuffer.indexOf('\n');
-        while (idx >= 0) {
-          const line = lineBuffer.substring(0, idx);
-          lineBuffer = lineBuffer.substring(idx + 1);
-          handleLine(line);
-          idx = lineBuffer.indexOf('\n');
-        }
-      });
-      client.on('dataEnd', () => {
-        if (cancelled || completed) { return; }
-        if (lineBuffer.length > 0) {
-          handleLine(lineBuffer);
-          lineBuffer = '';
-        }
-        if (doneSignal || completed) {
-          finish();
-        } else {
-          retryOrFail(new Error('SSE stream ended before [DONE]'), start);
-        }
-      });
-      client.on('dataReceiveProgress', () => {
-        lastActivity = Date.now();
-      });
+        client = http.createHttp();
+        const connection = client;
+        const connectionId = ++generation;
+        const isCurrent = (): boolean => !cancelled && !completed && connectionId === generation;
+        const decoder = util.TextDecoder.create('utf-8');
 
-      if (this.options.heartbeatTimeoutMs && this.options.heartbeatTimeoutMs > 0 && heartbeatTimer === null) {
-        const interval = Math.max(1000, Math.floor(this.options.heartbeatTimeoutMs / 2));
-        heartbeatTimer = setInterval(() => {
-          if (!cancelled && !completed && Date.now() - lastActivity > (this.options.heartbeatTimeoutMs ?? 0)) {
-            retryOrFail(new Error('SSE heartbeat timeout'), start);
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+          'Cache-Control': 'no-cache'
+        };
+        if (this.options.headers) {
+          for (const key of Object.keys(this.options.headers)) {
+            headers[key] = this.options.headers[key];
           }
-        }, interval) as number;
-      }
+        }
+        if (request.extraHeaders) {
+          for (const key of Object.keys(request.extraHeaders)) {
+            headers[key] = request.extraHeaders[key];
+          }
+        }
 
-      const options: http.HttpRequestOptions = {
-        method: (this.options.method ?? 'POST') as http.RequestMethod,
-        header: headers,
-        extraData: this.options.buildBody(request),
-        connectTimeout: this.options.connectTimeoutMs ?? 15000,
-        readTimeout: this.options.readTimeoutMs ?? 60000
-      };
-      client.requestInStream(this.options.url, options)
-        .then((code: number) => {
-          if (code >= 400) {
-            retryOrFail(new Error(`HTTP ${code}`), start);
+        connection.on('dataReceive', (data: ArrayBuffer) => {
+          if (!isCurrent()) { return; }
+          lastActivity = Date.now();
+          const text = decoder.decodeToString(new Uint8Array(data), { stream: true });
+          lineBuffer += text;
+          let idx = lineBuffer.indexOf('\n');
+          while (idx >= 0 && isCurrent()) {
+            const line = lineBuffer.substring(0, idx);
+            lineBuffer = lineBuffer.substring(idx + 1);
+            handleLine(line);
+            idx = lineBuffer.indexOf('\n');
           }
-        })
-        .catch((err: Error) => {
-          retryOrFail(err, start);
         });
+        connection.on('dataEnd', () => {
+          if (!isCurrent()) { return; }
+          if (lineBuffer.length > 0) {
+            handleLine(lineBuffer);
+            lineBuffer = '';
+          }
+          if (doneSignal || completed) {
+            finish();
+          } else {
+            retryOrFail(new Error('SSE stream ended before [DONE]'), start);
+          }
+        });
+        connection.on('dataReceiveProgress', () => {
+          if (!isCurrent()) { return; }
+          lastActivity = Date.now();
+        });
+
+        if (this.options.heartbeatTimeoutMs && this.options.heartbeatTimeoutMs > 0 && heartbeatTimer === null) {
+          const interval = Math.max(1000, Math.floor(this.options.heartbeatTimeoutMs / 2));
+          heartbeatTimer = setInterval(() => {
+            if (!cancelled && !completed && Date.now() - lastActivity > (this.options.heartbeatTimeoutMs ?? 0)) {
+              retryOrFail(new Error('SSE heartbeat timeout'), start);
+            }
+          }, interval) as number;
+        }
+
+        const options: http.HttpRequestOptions = {
+          method: (this.options.method ?? 'POST') as http.RequestMethod,
+          header: headers,
+          extraData: this.options.buildBody(request),
+          connectTimeout: this.options.connectTimeoutMs ?? 15000,
+          readTimeout: this.options.readTimeoutMs ?? 60000
+        };
+        connection.requestInStream(this.options.url, options)
+          .then((code: number) => {
+            if (!isCurrent()) { return; }
+            if (code >= 400) {
+              if (code === 408 || code === 429 || code >= 500) {
+                retryOrFail(new Error(`HTTP ${code}`), start);
+              } else {
+                fail(new Error(`HTTP ${code}`));
+              }
+            }
+          })
+          .catch((err: Error) => {
+            if (!isCurrent()) { return; }
+            retryOrFail(err, start);
+          });
+      } catch (e) {
+        fail(new Error('SSE request setup failed'));
+      }
     };
 
     start();

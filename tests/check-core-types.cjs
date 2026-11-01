@@ -29,7 +29,7 @@ function read(file) {
   if (path.resolve(file) === definitions) return platform;
   const original = file.endsWith('.ts') ? file.slice(0, -3) + '.ets' : '';
   if (original && fs.existsSync(original)) {
-    return fs.readFileSync(original, 'utf8').replace(/@ObservedV2\s*/g, '').replace(/@Trace\s*/g, '');
+    return fs.readFileSync(original, 'utf8').replace(/@ObservedV2\s*/g, '').replace(/@Trace\s*/g, '').replace(/@Computed\s*/g, '');
   }
   return nativeRead(file);
 }

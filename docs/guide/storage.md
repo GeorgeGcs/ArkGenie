@@ -33,6 +33,7 @@ async function createChat(context: common.Context): Promise<HostChat> {
 ## 保存语义与生命周期
 
 - `save()`、`remove()`、`clear()` 同步更新内存，默认在 300ms 窗口中合并落盘。持续流式更新也会按窗口提交。
+- Controller 的 UI 内容仍每 50ms 刷新，会话快照另按 500ms 窗口合并，完成、停止和错误时立即同步最终快照。需要在生成中主动保存时，先 `controller.persistCurrent()`，再 `await store.flush()`，以包含尚未显示的缓冲文本。
 - `await store.flush()` 等待待写数据提交；并发调用会串行合并，期间新增的修改也会被处理。
 - 应用转到后台时，先 `controller.stop()` 保留缓冲尾部，再调用 `store.flush()`。若存储中仍有上次中断的 `sending/streaming` 消息，重启恢复时会改为 `cancelled`，保留部分文本以供重试。
 - `flush()` 失败会 reject，并保留脏数据；可检查 `hasPendingWrites`、`lastError` 或订阅 `onError` 后显式重试。初始化失败由 `open()` reject 交给宿主处理，不会自动覆盖损坏数据。

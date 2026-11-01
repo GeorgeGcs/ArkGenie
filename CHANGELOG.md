@@ -3,11 +3,18 @@
 ## [Unreleased]
 
 ### Fixed
+- 历史消息重试不再携带后续问答；保留后续本地消息。
+- SSE 隔离旧连接回调，仅在无输出时重试，避免重复拼接；修复多余 HTTP 客户端和异常路径资源清理。
+- OpenAI 兼容 Provider 聚合并行工具调用参数分片，完整 JSON 校验后发出完成事件。
+- Preferences 异常重抛使用明确 Error 类型，满足 ArkTS 编译要求。
 - 流式内容在首次 50ms 刷写后停止更新、停止/出错时丢失缓冲尾部的问题。
 - 请求结束或取消时清理刷写定时器，避免立即发送或重试受到旧请求定时器影响。
 - 内存快照的嵌套 metadata 与调用方隔离，防止未保存的外部修改污染持久化快照。
 
 ### Added
+- 默认最近 20 轮 / 32000 历史字符的上下文策略，可通过 `setContextPolicy()` 配置；保留最新轮次及 system prompt。
+- 流式 UI 50ms 更新与快照 500ms 节流分离；提供 Controller `persistCurrent()` 主动同步缓冲文本。
+- 基于 `Repeat.virtualScroll()` 的列表和流式滚动跟随；Markdown 稳定块标识及前缀解析缓存。
 - `PreferencesSessionStore`：异步初始化、300ms 合并写入、显式 `flush()`、错误反馈和失败重试。
 - 带版本与校验的分块快照、两个分区交替提交和前一快照恢复；恢复中断消息时保留文本并标记取消。
 - `entry` 宿主生命周期接入 Preferences，会话恢复完成后加载页面，后台切换时保存。
